@@ -1,284 +1,286 @@
-# CrowdSync — Multi-Agent Stadium Command Platform
+# Stadnium AI — Multi-Agent Stadium Command Platform
 
-> Built for the **Build with AI: Agentic Premier League** hackathon.
->
-> **Problem:** Massive cricket crowds create bottlenecks, security risks, and
-> chaos during pre/post-match movements. Operations rely on fragmented manual
-> systems that cannot adapt to surges, weather, or emerging threats.
->
-> **Solution:** A **live 3D digital twin** of M. Chinnaswamy Stadium fed by
-> five cooperating AI agents — predicting surges from match context,
-> watching CCTV via Gemini vision, communicating two-way with fans via
-> AgentMail email, scraping the open web for emerging threats, and an
-> orchestrating Commander that applies SOPs. A Monte Carlo What-If
-> Simulator runs hundreds of stochastic trials per scenario to surface
-> probability distributions over crush risk and evacuation time.
+> **Codename:** CrowdSync · **Repo:** [github.com/Jay-Aditya-16/stadnium-ai](https://github.com/Jay-Aditya-16/stadnium-ai)
+> Built for **Build with AI: Agentic Premier League** (Google Cloud).
 
-## What makes this different
-
-Most teams will ship a CCTV heatmap with operator alerts. CrowdSync closes
-the loop on both sides:
-
-1. **Demand-side load balancing** — the Fan Concierge Agent emails affected
-   fans *before* a bottleneck forms ("exit via East Gate, save 12 min"),
-   reducing the crowd surge instead of just reacting to it.
-2. **Real two-way communication** — fans can reply to nudges ("my kid is
-   missing near Gate 4"). The agent reads, classifies, and routes the
-   incident to the Commander, which fires the right SOP automatically.
-3. **Cricket-aware predictions** — the Match Context Agent reasons over
-   match state (wickets, innings break, last over) + weather to predict
-   surges *5–10 minutes ahead* instead of reacting to them.
-4. **VirusTotal-hardened intake** — every URL in an inbound fan email is
-   scanned against 90+ AV engines *before* Gemini sees the content.
-   Phishing or malware quarantines automatically and never reaches the
-   LLM, directly addressing the "emerging threats" gap from the brief.
-5. **Firecrawl live web ingest** — the Match Context Agent can refresh
-   from a real cricket scoreboard, and a dedicated **Threat Intel Agent**
-   sweeps news/weather sources for protests, transit strikes, and
-   weather alerts that could affect the venue *today*. This replaces a
-   static threat model with continuously-updated situational awareness.
-6. **Live 3D digital twin + Monte Carlo What-If** — the entire stadium
-   (19 stands, 18 gates, pitch, boundary roads) is rendered as a 3D
-   model where each stand extrudes by current density. Pose any
-   perturbation ("close Gate G6", "rain starts", "match ends now") and
-   the **Monte Carlo Threat Predictor** runs 100-1000 stochastic trials,
-   sampling density and gate throughput, to produce probability
-   distributions: P(crush), P(evacuation > 10 min), and 5th/50th/95th
-   percentile densities per zone. Uncertainty widens automatically when
-   the Threat Intel Agent flags elevated risk. Production cadence is
-   one re-run every 5 seconds, before humans even notice.
-
-## Architecture
+A live operations platform for stadium command. Eight cooperating agents,
+two clients (operator dashboard + fan app), one Commander that owns the
+incident state, and a Monte Carlo crush forecaster that runs probability
+bands rather than point estimates.
 
 ```
-                                ┌──────────────────────┐
-                                │   Operator (web UI)  │
-                                │   Streamlit on       │
-                                │   Cloud Run          │
-                                └──────────┬───────────┘
-                                           │
-                                ┌──────────▼───────────┐
-                                │   Commander Agent    │
-                                │   (Gemini reasoning  │
-                                │   + SOP library)     │
-                                └──┬───────┬────────┬──┘
-                                   │       │        │
-              ┌────────────────────┘       │        └────────────────────┐
-              │                            │                             │
-   ┌──────────▼──────────┐  ┌──────────────▼─────────┐  ┌────────────────▼──────────┐
-   │ Match Context Agent │  │ Fan Concierge Agent    │  │ Vision Agent              │
-   │ Cricket + weather   │  │ AgentMail send / recv  │  │ Gemini multimodal on      │
-   │ → surge predictions │  │ → 2-way fan comms      │  │ stadium camera clips      │
-   │ (Gemini)            │  │ (Gemini + AgentMail)   │  │ (Gemini Vision)           │
-   └─────────────────────┘  └────────────────────────┘  └───────────────────────────┘
-                                           │
-                                ┌──────────▼───────────┐
-                                │   AgentMail Inboxes  │
-                                │   - fan-concierge    │
-                                │   - commander        │
-                                └──────────┬───────────┘
-                                           │
-                                ┌──────────▼───────────┐
-                                │   Real fan inboxes   │
-                                │   (visible during    │
-                                │   live demo)         │
-                                └──────────────────────┘
+                                  STADNIUM AI
+                                       │
+            ┌──────────────────────────┼──────────────────────────┐
+            ▼                          ▼                          ▼
+       OPERATOR                     FAN APP                   COMMANDER
+       (web dashboard)              (mobile-like              (SOP dispatch,
+                                     web page)                 audit trail)
+            │                          │                          │
+            └──────────────────────────┼──────────────────────────┘
+                                       │
+                       ┌───────────────┴──────────────┐
+                       │   Monte Carlo + What-If      │
+                       │   Match Context  • Vision    │
+                       │   Threat Intel   • Red Cell  │
+                       │   Fan Concierge  • Browser   │
+                       └───────────────┬──────────────┘
+                                       │
+                ┌────────────┬─────────┼──────────┬──────────────┐
+                ▼            ▼         ▼          ▼              ▼
+            Gemini       AgentMail   Vapi     VirusTotal     Firecrawl
+            (LLM)        (email)    (voice)   (URL safety)   (web scrape)
+                                       │
+                                ┌──────┴───────┐
+                                │  Supabase    │
+                                │  + pgvector  │
+                                │  (audit,     │
+                                │   memory)    │
+                                └──────────────┘
 ```
 
-## The six agents
+---
 
-| Agent | Role | Inputs | Tools |
-|---|---|---|---|
-| **Match Context** | Cricket-aware crowd surge predictor | match_state.json, weather, zones | `predict_surge(zone, mins)`, `get_match_state()`, `refresh_from_live_scoreboard()` (via Firecrawl) |
-| **Vision** | CCTV anomaly + density detection | mp4 clips (sampled by Gemini) | `analyze_clip(name)` — returns density + anomalies |
-| **Fan Concierge** | Personalized fan nudges + reply handling, with VirusTotal pre-scan | predicted surges, AgentMail inbox | `send_nudges_for_surge()`, `poll_replies()`, `acknowledge_fan()` |
-| **Threat Intel** | Open-source intelligence sweep for emerging operational threats | news + weather URLs (via Firecrawl) | `fetch_raw_intel()`, `summarize_intel()`, `run()` |
-| **What-If Simulator** | Monte Carlo crowd forecaster + perturbation analyzer | full stadium topology + risk level | `simulate()`, `compare(perturbation)`, `monte_carlo()`, `narrate_scenario()` |
-| **Commander** | SOP orchestrator + human escalation | all of above + SOP library | `handle_predicted_surge()`, `handle_vision_anomaly()`, `handle_fan_incident()`, `answer_operator()` |
+## Quick links
 
-The Commander loads `data/sop_library.json` and picks the matching SOP
-(`CROWD_SURGE`, `LOST_CHILD`, `MEDICAL`, `WEATHER_RAIN`, `PANIC_BEHAVIOR`).
-For each SOP it drafts an action plan with Gemini, executes the `auto`
-actions, surfaces `requires_approval` actions to the operator, and escalates
-high/critical severity to a human inbox via AgentMail.
+| Doc | What's inside |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Process topology, agent ownership, scheduling contract, state model, bidirectional fan loop |
+| [`docs/MATHS.md`](docs/MATHS.md) | Monte Carlo derivations, crush threshold rationale, evacuation model, $k$-anonymity argument |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Threat model, VirusTotal pre-LLM gate, auth boundaries, privacy de-identification |
+| [`docs/DIFFERENTIATION.md`](docs/DIFFERENTIATION.md) | How Stadnium differs from CCTV-heatmap dashboards, generic Cloud Run agent demos, ticketing add-ons, and academic crowd simulators |
 
-## Stadium layout — M. Chinnaswamy, Bengaluru
+---
 
-19 zones across A/B/C/G/M/N/P stand families + Club House + Pavilion;
-18 gates around the perimeter (G1-G9 west along Queen's Road, G12-G16
-north along Cubbon Road, G17-G19 east along Link Road, G20-G21 SE along
-MG Road). Each gate has a `throughput_per_min` capacity used by the
-Monte Carlo evacuation model. Coordinates were transcribed from the
-official stadium plan.
+## The problem
 
-## Live ops mode
+M. Chinnaswamy Stadium holds ~40,000 fans. Bottlenecks form 5–10 minutes
+before they become visible on CCTV — driven by **match state** (wickets,
+innings break, last over), **weather**, and **external events** (transit
+strikes, protests near venue). Operations today rely on radio chatter and
+fragmented manual systems. The window to act on a forming surge is short,
+and operators cannot reach the people whose movement actually shifts the
+distribution: the **fans themselves**.
 
-The dashboard **auto-refreshes every 5 seconds**. Each subsystem has its
-own TTL so we respect the Gemini / Firecrawl / AgentMail quotas:
+## The solution shape
 
-| Subsystem | Refresh | Cost per cycle |
-|---|---|---|
-| Monte Carlo + 3D twin | 5 s | free (pure compute) |
-| Fan inbox poll + auto-fire SOPs | 20 s | 1 AgentMail list call (+ Gemini classify only on new messages) |
-| Vision Agent (camera rotator) | 30 s | cached / 1 Gemini multimodal |
-| Predicted surges | 90 s | 1 Gemini call |
-| Live scoreboard refresh | 2 min | 1 Firecrawl + 1 Gemini |
-| Threat Intel sweep | 5 min | 3 Firecrawl + 1 Gemini |
+Stadnium closes the loop on **both sides** of a surge:
 
-Each tile shows a "X seconds ago" badge. Operators see the current
-P(crush), evac time, top-5 crush zones, threat intel briefing, predicted
-surges, live camera readout, and incident feed **without clicking
-anything**. Pose a different What-If scenario from the sidebar and the
-3D twin + Monte Carlo recompute on the next tick.
+```
+Match Context Agent  ─ predicts surge in zone Z, T+5min
+                      │
+                      ▼
+Fan Concierge Agent  ─ emails affected ticket holders ("exit East Gate")
+                      │
+                      ▼ (fan replies "my kid is missing")
+Fan Concierge        ─ VirusTotal scans URLs ─► Gemini classifies
+                      │
+                      ▼
+Commander Agent      ─ fires LOST_CHILD SOP, replies to fan, escalates
+                      │
+                      ▼
+Operator dashboard   ─ sees the incident, response team converges
+```
 
-> **Auto-fire mode:** when a fan emails the Concierge inbox, the next
-> 20-second tick polls the inbox, runs VirusTotal on URLs, classifies
-> via Gemini, and routes incidents straight to the Commander Agent
-> (which fires the matching SOP, sends the acknowledgment reply, and
-> escalates if severity is high/critical). No operator intervention
-> needed for the loop to close. Toggle off in the sidebar if you want
-> manual approval gates instead.
+Every link is implemented. End-to-end loop time is ~20 s on the demo (gated
+by the inbox poll cadence).
 
-## Demo flow (90 seconds)
+## What's inside
 
-1. Sidebar → **Refresh from LIVE scoreboard** (Firecrawl scrapes Cricbuzz,
-   Gemini extracts current match state). The match state shown on screen
-   is now real.
-2. Sidebar → **Run Threat Intel Agent**. The agent scrapes Google News for
-   Mumbai-area news + weather and surfaces real threats for today (e.g.
-   "Severe bus transit disruption", "IMD storm alert"). Operator briefing
-   appears top-right.
-3. Sidebar → **Advance one over (+ wicket)**.
-4. Sidebar → **Run Match Context Agent**. Map updates with predicted surges.
-5. *"Predicted Surges"* panel → click **Route this surge** on the worst zone.
-   Real emails are sent from `richperson405@agentmail.to` to
-   `sillyconcept612@agentmail.to` and `youthfulunion707@agentmail.to`.
-   Show them live in the AgentMail dashboard.
-6. From one of those inboxes, **reply**: *"My kid is missing near Gate 4."*
-7. Sidebar → **Poll Fan Inbox**. URLs in the reply are scanned by
-   VirusTotal first; if clean, Gemini classifies as `LOST_CHILD`, the
-   Commander fires the LOST_CHILD SOP, replies to the fan with help-desk
-   location, and escalates to the operator email.
-8. Sidebar → **Run Vision Agent** on `dense.mp4`. Vision Agent panel
-   reports density + anomalies. Click **Route via Commander Agent →**.
-9. **Commander Chat:** *"Any threats outside the stadium I should know
-   about?"* — Commander invokes the Threat Intel Agent and answers with
-   today's actual news.
-10. **What-If Simulator:** select perturbation = *"close_gate"*, gate =
-    *G6* (a main west gate), risk = pulled from Intel Agent. Hit Run.
-    The 3D digital twin renders **side-by-side** before/after states,
-    metrics show ΔP(crush) + Δevac time + ΔP(evac>10min) across 500
-    Monte Carlo trials, and Gemini narrates the difference in plain
-    English with a recommended action.
+### Eight cooperating agents (`agents/`)
 
-## Quickstart (local)
+| Agent | LOC | Role | Key inputs | Key tools |
+|---|---|---|---|---|
+| **commander** | 379 | SOP orchestrator + incident store + operator chat | all sub-agent outputs | Gemini, Supabase |
+| **whatif_simulator** | 368 | Monte Carlo crush + evac forecaster, What-If perturbations | stadium_zones, match_state | (pure compute) |
+| **fan_concierge** | 291 | Inbound + outbound fan email, VT-gated, auto-SOP routing | AgentMail inbox, predicted surges | AgentMail, VirusTotal, Gemini |
+| **match_context** | 231 | Cricket + weather → surge predictions, live scoreboard scrape | match_state, Cricbuzz | Gemini, Firecrawl |
+| **intel** | 121 | Threat intel sweep — news + weather, scored by category | news/weather URLs | Firecrawl, Gemini |
+| **red_cell** | 118 | Adversarial perturbation search — what's the worst What-If? | whatif_simulator | (pure compute) |
+| **vision** | 87 | Gemini multimodal CCTV density + anomaly detection | mp4 clips | Gemini (multimodal) |
+| **browser_agent** | 75 | Live web lookup (traffic, transit) via cloud browser | URLs | browser-use cloud |
+| **fan_reports** | new | Crowd-sourced reports from attendees, points/badges, auto-route | Fan App submissions | Commander |
+
+### Seven tool clients (`tools/`)
+
+`gemini_client` (LLM), `agentmail_client` (2-way fan email),
+`virustotal_client` (URL safety), `firecrawl_client` (web scrape),
+`vapi_client` (voice — web widget + outbound calls), `supabase_client`
+(Postgres + pgvector audit trail), `browser_use_client` (cloud browser),
+plus `privacy` (post-event de-identification).
+
+### Two clients (`ui/`)
+
+- **Operator dashboard** (`ui/app.py`, 892 LOC) — KPIs, voice + PA pinned
+  at top, live 3D twin + 2D OpenStreetMap heatmap (tabbed), local alerts,
+  crowding predictions, camera view, live incidents, Ask Command chat,
+  web lookup, fan messages, decision history, privacy report builder,
+  incoming fan reports feed.
+- **Fan App** (`ui/pages/2_📱_Fan_App.py`) — phone-style page; pick a
+  handle, report issues, earn points, climb the leaderboard. Same data
+  plane as the operator dashboard.
+
+---
+
+## The Monte Carlo, in one paragraph
+
+At each tick, baseline state $s$ is constructed from match attendance and
+zone capacities. A perturbation $\Phi$ (close gate G6, rain starts, match
+ends, etc.) is applied. Then $N=200$ trials sample
+$\tilde d_z \sim \mathcal{N}(d_z, \sigma_d^2)$ for each zone's density and
+$\tilde\tau_g \sim \mathcal{N}(\tau_g, \sigma_\tau^2)$ for each gate's
+throughput, with $\sigma$ scaled by the threat-intel risk level. Outputs are
+**probability bands**: $\hat P_{\text{crush}}$, $\hat P_{\text{slow\_evac}}$,
+per-zone $\{p_5, p_{50}, p_{95}\}$, and per-zone crush probability.
+$N=200$ gives ±3.5 pp standard error at the worst case; the engine costs
+~20 ms per run on a single core. Full derivation in
+[`docs/MATHS.md`](docs/MATHS.md).
+
+## The security boundary, in one paragraph
+
+The riskiest surface is fan email — it carries URLs from arbitrary senders.
+Every inbound URL is scanned by **VirusTotal v3** *before* Gemini sees the
+message body. Any URL flagged malicious (or with ≥2 suspicious verdicts)
+quarantines the entire message, replaces the body with `[REDACTED]`, and
+logs a `SECURITY_THREAT` incident. The Gemini classifier never sees the
+poisoned content — closing the prompt-injection pathway from the public
+inbox. Full threat model in [`docs/SECURITY.md`](docs/SECURITY.md).
+
+---
+
+## Run locally
 
 ```bash
-cd ~/apl/crowdsync
+git clone https://github.com/Jay-Aditya-16/stadnium-ai.git
+cd stadnium-ai
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# .env is already populated; verify GEMINI_API_KEY, AGENTMAIL_API_KEY,
-# VIRUSTOTAL_API_KEY, FIRECRAWL_API_KEY
+cp .env.example .env   # fill in keys — at minimum GEMINI_API_KEY
 streamlit run ui/app.py
 ```
 
-Open http://localhost:8501. The dashboard begins auto-refreshing
-immediately — within ~30 seconds you'll see the first Monte Carlo, fan
-inbox poll, vision frame, and threat intel briefing populate.
+Open http://localhost:8501 for the operator dashboard, or
+http://localhost:8501/Fan_App for the fan submission page.
 
-Optional: drop `normal.mp4`, `dense.mp4`, `panic.mp4` into `data/clips/`.
-Without clips the Vision Agent serves cached responses so the demo never
-breaks (see `data/cached_vision.json`).
+The dashboard auto-refreshes every 5 s. First Monte Carlo, fan-inbox poll,
+vision frame, and threat-intel briefing populate within ~30 s.
+
+**Optional:** drop `normal.mp4`, `dense.mp4`, `panic.mp4` into `data/clips/`
+for the Vision Agent to analyze. Without them it serves cached responses so
+the demo never breaks.
+
+## Required environment variables
+
+| Key | Required? | What it enables |
+|---|---|---|
+| `GEMINI_API_KEY` | **yes** (or fallback path) | All LLM calls. Without it, the app runs in deterministic-fallback mode (still ships). |
+| `AGENTMAIL_API_KEY` | for fan loop | Inbound + outbound fan email |
+| `VIRUSTOTAL_API_KEY` | for security | URL safety pre-scan |
+| `FIRECRAWL_API_KEY` | for web ingest | Cricbuzz scoreboard, news + weather |
+| `VAPI_PUBLIC_KEY` + `VAPI_PRIVATE_KEY` | for voice | Voice assistant widget |
+| `VAPI_PHONE_NUMBER_ID` | for outbound calls | Real phone calls (graceful error without) |
+| `SUPABASE_DB_URL` + `SUPABASE_URL` + `SUPABASE_ANON_KEY` | optional | Durable incidents + audit trail + pgvector similarity. App falls back to JSON files when unset. |
+| `BROWSER_USE_API_KEY` | optional | Live web lookup |
 
 ## Deploy to Cloud Run
 
 ```bash
 gcloud auth login
-gcloud config set project platinum-loop-497205-a3
+gcloud config set project YOUR_PROJECT_ID
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
 ./deploy.sh
 ```
 
-The script creates secrets in Secret Manager, grants the Cloud Run service
-account access, then `gcloud run deploy --source .` builds the container
-and exposes the dashboard publicly. The deploy URL prints at the end.
-
-## Security & scalability
-
-- **Inbound content scanning:** Every URL inside an incoming fan email is
-  sent to the **VirusTotal v3 API** before Gemini classifies the message.
-  If any URL is flagged malicious or has 2+ suspicious verdicts, the
-  message is **quarantined** — its body is replaced with `[REDACTED]`
-  before it reaches the LLM, so a poisoned email can never inject prompts
-  or exfiltrate context. A SECURITY_THREAT incident is logged and
-  escalated to the operator.
-- **Secrets:** Gemini, AgentMail, and VirusTotal keys live in **Secret
-  Manager**, mounted into Cloud Run as env vars at runtime. Never baked
-  into the image.
-- **IAM:** Each agent inbox is a separate `client_id`; AgentMail isolates
-  inbox auth per agent.
-- **Scalability:** Cloud Run autoscales 0→N. For 33k-fan stadiums, the path
-  forward is:
-  - **Pub/Sub** between Match Context → Fan Concierge to queue nudges
-    instead of inline sends (current MVP sends inline, capped at 3
-    recipients per surge to respect free-tier limits).
-  - **Cloud Tasks** for retries on failed AgentMail sends.
-  - **Vertex AI Vector Search** to dedupe similar incidents.
-- **Graceful degradation:** Vision Agent falls back to cached responses if
-  Gemini multimodal errors. Match Context errors return an empty
-  prediction set without crashing the orchestrator.
-
-## Rubric mapping (Phase 1 — 40 + 5 pts)
-
-| Rubric | How CrowdSync addresses it |
-|---|---|
-| **Functional Fulfillment (15)** | Full bidirectional loop: predict → nudge fans → fans reply → classify → fire SOP → escalate. Live demo shows real emails arriving in real inboxes. Plus 3D digital twin renders the actual Chinnaswamy stadium, and Monte Carlo What-If gives operators a forecasted-versus-baseline view before they take any action. |
-| **Scalability & Security (10)** | Secret Manager + Cloud Run autoscale + documented Pub/Sub path. IAM-isolated agent inboxes. **VirusTotal scans every inbound URL before any LLM call**, preventing prompt-injection / phishing pivots via the public-facing fan inbox. |
-| **Static Code Analysis (15)** | Clear module boundaries (`agents/`, `tools/`, `ui/`, `data/`). Typed Python with dataclasses. Google AI SDKs used explicitly (`google-genai`, `agentmail`). Pytest covers Match Context. |
-| **GCP Deployment (5)** | `./deploy.sh` → Cloud Run + Secret Manager + Cloud Build. Live URL in submission. |
+`deploy.sh` creates Secret Manager entries for each key, grants the Cloud
+Run service account access, and runs `gcloud run deploy --source .`. The
+deploy URL is printed at the end.
 
 ## Project layout
 
 ```
-crowdsync/
-├── agents/
-│   ├── match_context.py     # cricket → surge predictions (+ live scoreboard refresh)
-│   ├── vision.py            # Gemini multimodal on clips
-│   ├── fan_concierge.py     # AgentMail two-way fan comms (VT-gated)
-│   ├── intel.py             # Threat Intel — Firecrawl news/weather sweep
-│   ├── whatif_simulator.py  # Monte Carlo + What-If perturbations
-│   └── commander.py         # SOP orchestrator
-├── tools/
-│   ├── gemini_client.py     # google-genai wrapper
-│   ├── agentmail_client.py  # AgentMail SDK wrapper
-│   ├── virustotal_client.py # VirusTotal URL + file reputation
-│   └── firecrawl_client.py  # Firecrawl scrape wrapper (cached)
-├── ui/app.py                # Streamlit dashboard
+stadnium-ai/
+├── agents/                      # 9 agent modules (incl. fan_reports)
+│   ├── commander.py             # SOP orchestrator, incident store
+│   ├── whatif_simulator.py      # Monte Carlo + perturbations
+│   ├── fan_concierge.py         # 2-way fan email, VT-gated
+│   ├── match_context.py         # Cricket → surge predictions
+│   ├── intel.py                 # Threat intel sweep
+│   ├── red_cell.py              # Adversarial perturbation search
+│   ├── vision.py                # CCTV density via Gemini multimodal
+│   ├── browser_agent.py         # browser-use cloud sessions
+│   └── fan_reports.py           # Crowd-sourced fan reports
+├── tools/                       # 8 service clients
+│   ├── gemini_client.py         # LLM
+│   ├── agentmail_client.py
+│   ├── virustotal_client.py
+│   ├── firecrawl_client.py
+│   ├── vapi_client.py
+│   ├── supabase_client.py
+│   ├── browser_use_client.py
+│   └── privacy.py               # Post-event de-identification
+├── ui/
+│   ├── app.py                   # Operator dashboard (Streamlit)
+│   ├── theme.py                 # Light neumorphic theme
+│   ├── stadium_3d.py            # 3D digital twin (Plotly)
+│   ├── stadium_map.py           # 2D OpenStreetMap heatmap
+│   ├── login.py
+│   └── pages/
+│       └── 2_📱_Fan_App.py      # Fan-facing page
 ├── data/
-│   ├── stadium_zones.json
+│   ├── stadium_zones.json       # M. Chinnaswamy topology
 │   ├── match_state.json
-│   ├── tickets.json
 │   ├── sop_library.json
-│   ├── cached_vision.json
-│   └── clips/               # mp4 samples (gitignored)
-├── tests/test_smoke.py
+│   ├── incidents.json           # Local fallback store
+│   ├── fan_reports.json
+│   └── cached_vision.json
+├── migrations/
+│   └── 001_init.sql             # Supabase schema (pgvector)
+├── tests/
+│   └── test_smoke.py            # Module-level smoke + Vapi surface
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── MATHS.md
+│   ├── SECURITY.md
+│   └── DIFFERENTIATION.md
+├── .streamlit/config.toml       # Theme + headless server config
 ├── Dockerfile
 ├── deploy.sh
-├── requirements.txt
-└── README.md
+└── requirements.txt
 ```
 
-## Honest scope notes
+## What's lite, what's production
 
-- **WhatsApp / SMS:** The original sketch used WhatsApp; we switched to
-  AgentMail email because it gave us **real two-way communication in 3
-  hours** without Meta business verification. Production deployment would
-  add a WhatsApp Business channel alongside email — same Fan Concierge
-  Agent, different transport.
-- **Real CCTV feed:** We sample short mp4 clips through Gemini multimodal.
-  A production deployment would tap RTSP streams via GStreamer and sample
-  one frame every 2s into the same pipeline.
-- **ADK:** We use `google-genai` directly with structured-output JSON and
-  keyword-based tool dispatch in the Commander, prioritizing reliability in
-  a 3-hour build window. Migration to the Agent Development Kit
-  orchestration model is a 1-file change in `agents/commander.py`.
+| Component | Status |
+|---|---|
+| 8 agents + Commander dispatch | ✅ production-shape, hackathon-MVP-depth |
+| Monte Carlo engine | ✅ production-shape, 200 trials/tick under 1 ms each |
+| VirusTotal pre-LLM gate | ✅ production-grade — same code would ship |
+| Fan email loop (AgentMail) | ✅ end-to-end functional |
+| Voice assistant (Vapi) | ✅ web widget + outbound calls (needs phone number ID) |
+| 3D twin + 2D real-map heatmap | ✅ both render the same state |
+| Privacy de-id | 🟡 *lite* — `k`-anonymity gate not enforced; documented |
+| Fan App auth | 🟡 *lite* — no rate limit, handle-only; documented |
+| Tests | 🟡 *smoke only* — `tests/test_smoke.py` (182 LOC) |
+| CI | ❌ not wired |
+| Cloud Run deploy | 🟢 scripted (`deploy.sh`), URL TBD on submission |
+
+Honest scoping. The architecture is the load-bearing piece — every gap above
+is slot-in replaceable without touching agent boundaries.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
+## Acknowledgments
+
+Built solo in the **Build with AI: Agentic Premier League** finale window
+(May 2026). Special call-outs:
+
+- **Google Cloud / Gemini** — LLM reasoning + multimodal vision
+- **AgentMail** — programmable email inboxes that made the fan loop possible
+- **Vapi** — voice infra
+- **VirusTotal** — URL reputation
+- **Firecrawl** — web scrape
+- **browser-use** — cloud-browser sessions for live lookups
+- **Supabase** — Postgres + pgvector for audit + institutional memory
+- **OpenStreetMap** — real stadium geography for the map view
