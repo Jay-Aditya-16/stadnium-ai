@@ -105,6 +105,18 @@ p, span, label, li {{ color: var(--ink); }}
   background: var(--accent) !important;
   transform: translateY(-1px);
 }}
+/* Force every text element inside dark / accent buttons to white —
+   Streamlit nests labels in <p>/<span>/<div> that otherwise inherit
+   the global black body colour. */
+.stButton > button p, .stButton > button span, .stButton > button div,
+.stButton > button label,
+.stDownloadButton > button p, .stDownloadButton > button span, .stDownloadButton > button div,
+.stDownloadButton > button label,
+button[kind="primaryFormSubmit"] p, button[kind="primaryFormSubmit"] span, button[kind="primaryFormSubmit"] div,
+button[kind="primary"] p, button[kind="primary"] span, button[kind="primary"] div,
+button[kind="secondaryFormSubmit"] p, button[kind="secondaryFormSubmit"] span, button[kind="secondaryFormSubmit"] div {{
+  color: #FFFFFF !important;
+}}
 /* Form submit (primary-ish) — accent */
 button[kind="primaryFormSubmit"], button[kind="primary"] {{
   background: var(--accent) !important;
