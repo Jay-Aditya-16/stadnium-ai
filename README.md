@@ -3,6 +3,15 @@
 > **Codename:** CrowdSync · **Repo:** [github.com/Jay-Aditya-16/stadnium-ai](https://github.com/Jay-Aditya-16/stadnium-ai)
 > Built for **Build with AI: Agentic Premier League** (Google Cloud).
 
+## 🚀 Live demo
+
+**Operator dashboard:** https://crowdsync-912849963950.asia-south1.run.app
+**Fan App:** https://crowdsync-912849963950.asia-south1.run.app/Fan_App
+
+Deployed on Google Cloud Run (`platinum-loop-497205-a3`, region `asia-south1`).
+Secrets in Secret Manager; container built via Cloud Build; mapped to a public,
+unauthenticated HTTPS endpoint. Cold start ~5 s, warm ~200 ms.
+
 A live operations platform for stadium command. Eight cooperating agents,
 two clients (operator dashboard + fan app), one Commander that owns the
 incident state, and a Monte Carlo crush forecaster that runs probability
@@ -262,7 +271,7 @@ stadnium-ai/
 | Fan App auth | 🟡 *lite* — no rate limit, handle-only; documented |
 | Tests | 🟡 *smoke only* — `tests/test_smoke.py` (182 LOC) |
 | CI | ❌ not wired |
-| Cloud Run deploy | 🟢 scripted (`deploy.sh`), URL TBD on submission |
+| Cloud Run deploy | ✅ **live at https://crowdsync-912849963950.asia-south1.run.app** |
 
 Honest scoping. The architecture is the load-bearing piece — every gap above
 is slot-in replaceable without touching agent boundaries.
