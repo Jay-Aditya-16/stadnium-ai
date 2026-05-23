@@ -146,11 +146,11 @@ def build_post_event_report(
         "by_hour": dict(sorted(by_hour.items())),
         "incidents": deid,
         "privacy_notes": [
-            "Direct identifiers stripped: emails, phones, names, free-text PII.",
-            "Quasi-identifiers generalised: exact zone → zone family; timestamps → hour buckets.",
-            f"All timestamps shifted by {shift_days} day(s) — uniform within this report so temporal patterns survive but calendar linkage is broken.",
-            "Reporter / fan IDs replaced with salted SHA-256 hash prefixes.",
-            "Re-identification of any single attendee is not reasonably likely from this output.",
+            "Personal info removed: emails, phone numbers, names, and anything sensitive in free-text fields.",
+            "Exact locations blurred to general areas (e.g. 'A Stand row 18, seat 7' becomes 'A stand area').",
+            f"All times shifted by {shift_days} day(s) — the same offset across the whole report, so you can still see patterns over time without knowing the real dates.",
+            "Reporter and fan IDs replaced with anonymous codes.",
+            "It is not reasonably possible to identify any individual attendee from this report.",
         ],
     }
 

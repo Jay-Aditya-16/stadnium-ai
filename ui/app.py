@@ -348,9 +348,9 @@ with st.sidebar:
         ),
     )
 
-    st.subheader("What-If scenario")
+    st.subheader("Test a scenario")
     ptype = st.selectbox(
-        "Perturbation",
+        "What if…",
         options=["match_end", "wicket_end_innings", "weather_rain", "close_gate", "open_gate", "incident_zone"],
         index=0,
     )
@@ -378,39 +378,39 @@ with st.sidebar:
             st.caption(f"👤 {op.get('name','?')} · {op.get('role','?')} ({op.get('email','?')})")
 
     st.divider()
-    st.subheader("💾 Supabase")
+    st.subheader("💾 Database")
     if supabase_client.is_enabled():
         sb = maybe_run("supabase_health", ttl_seconds=30, fn=supabase_client.health, expensive=False)
         if sb and sb.get("ok"):
             st.success(f"Connected · {sb['incidents']} incidents · {sb['tickets']} tickets")
             st.caption(f"server: {sb.get('server_time','')[:19]}")
         else:
-            st.error(f"DB error: {(sb or {}).get('error','?')[:120]}")
+            st.error(f"Database error: {(sb or {}).get('error','?')[:120]}")
     else:
-        st.caption("Supabase not configured.")
+        st.caption("Database not connected.")
 
     st.divider()
-    st.subheader("Refresh status")
-    st.caption(f"Monte Carlo: {age_str('whatif')}")
-    st.caption(f"Predictions: {age_str('predictions')}")
-    st.caption(f"Fan inbox: {age_str('fanmail')}")
-    st.caption(f"Vision: {age_str('vision')}")
-    st.caption(f"Threat Intel: {age_str('intel')}")
-    st.caption(f"Scoreboard: {age_str('scoreboard')}")
+    st.subheader("Last update")
+    st.caption(f"Crowd forecast: {age_str('whatif')}")
+    st.caption(f"Crowding predictions: {age_str('predictions')}")
+    st.caption(f"Fan messages: {age_str('fanmail')}")
+    st.caption(f"Cameras: {age_str('vision')}")
+    st.caption(f"Local alerts: {age_str('intel')}")
+    st.caption(f"Match score: {age_str('scoreboard')}")
 
     st.divider()
-    st.subheader("Force")
-    if st.button("⏭ Advance over", use_container_width=True):
+    st.subheader("Run now")
+    if st.button("⏭ Skip to next over", use_container_width=True):
         match_context.advance_over()
         st.session_state["predictions_at"] = 0
-    if st.button("📰 Re-run Threat Intel now", use_container_width=True):
+    if st.button("📰 Check local alerts now", use_container_width=True):
         st.session_state["intel_at"] = 0
-    if st.button("🔮 Re-run Predictions now", use_container_width=True):
+    if st.button("🔮 Update crowding predictions", use_container_width=True):
         st.session_state["predictions_at"] = 0
-    if st.button("🌐 Refresh scoreboard now", use_container_width=True):
+    if st.button("🌐 Refresh match score", use_container_width=True):
         st.session_state["scoreboard_at"] = 0
     st.session_state.auto_process_mail = st.toggle(
-        "Auto-fire SOPs on new fan mail",
+        "Auto-handle new fan messages",
         value=st.session_state.auto_process_mail,
         help="When on, fan replies are classified by Gemini and routed to the Commander automatically.",
     )
@@ -424,7 +424,7 @@ with st.sidebar:
 
 twin_cols = st.columns([3, 2])
 with twin_cols[0]:
-    st.subheader("Live Digital Twin")
+    st.subheader("Live Stadium View")
     if whatif_cmp:
         scen_overrides = {zid: pcts["p50"] for zid, pcts in whatif_cmp["scenario"]["density_percentiles"].items()}
         scen_state = state_with_perturbation_applied(st.session_state.whatif_perturbation)
@@ -434,10 +434,10 @@ with twin_cols[0]:
         scen_overrides = None
         view_title = "Baseline"
 
-    tab_map, tab_3d = st.tabs(["🗺 Map (heat)", "📦 3D Twin"])
+    tab_map, tab_3d = st.tabs(["🗺 Map view", "📦 3D view"])
     with tab_map:
         st.caption(
-            f"OpenStreetMap of M. Chinnaswamy · density overlay last refreshed {age_str('whatif')}"
+            f"Real map of M. Chinnaswamy stadium. Brighter colours = more crowded. Last updated {age_str('whatif')}."
         )
         map_fig = build_map_figure(
             scen_state,
@@ -448,7 +448,7 @@ with twin_cols[0]:
         st.plotly_chart(map_fig, use_container_width=True, key=f"map_{tick}")
     with tab_3d:
         st.caption(
-            f"Stands extruded by current density · last MC tick: {age_str('whatif')} · drag to rotate"
+            f"Each stadium section grows taller the more crowded it is. Last updated {age_str('whatif')} · drag to rotate."
         )
         fig = build_3d_figure(
             scen_state,
@@ -459,27 +459,27 @@ with twin_cols[0]:
         st.plotly_chart(fig, use_container_width=True, key=f"twin_{tick}")
 
 with twin_cols[1]:
-    st.subheader("Top crush risk zones")
+    st.subheader("Highest-risk areas")
     if whatif_cmp:
         for z in whatif_cmp["scenario"]["top_crush_zones"][:5]:
             pct = z["p_crush"]
             color = "#E94B4B" if pct >= 0.5 else ("#F5A623" if pct >= 0.2 else "#7ED321")
             st.markdown(
                 f"<div style='padding:6px 10px; margin:4px 0; background:#1B2838; border-left:4px solid {color}; border-radius:4px; color:white;'>"
-                f"<b>{z['zone_id']}</b> · P(crush) = <span style='color:{color}; font-weight:700;'>{pct:.1%}</span></div>",
+                f"<b>{z['zone_id']}</b> · Crush risk: <span style='color:{color}; font-weight:700;'>{pct:.1%}</span></div>",
                 unsafe_allow_html=True,
             )
     else:
-        st.caption("Computing…")
+        st.caption("Calculating…")
 
-    st.subheader("Narration")
+    st.subheader("What's happening")
     if whatif_narration:
         st.info(whatif_narration.get("summary", ""))
         if whatif_narration.get("recommendation"):
             st.success(f"➡ {whatif_narration['recommendation']}")
         st.caption(f"updated {age_str('whatif_narration')}")
     else:
-        st.caption("Narration generating… (change the scenario to refresh)")
+        st.caption("Generating summary… (change the scenario to refresh)")
 
 
 # ---------------------------------------------------------------------------
@@ -489,8 +489,8 @@ with twin_cols[1]:
 mid_cols = st.columns([2, 2, 2])
 
 with mid_cols[0]:
-    st.subheader("🌐 Threat Intel (live)")
-    st.caption(f"refresh: every 5 min · {age_str('intel')}")
+    st.subheader("🌐 Local Alerts (live)")
+    st.caption(f"updates every 5 min · {age_str('intel')}")
     if intel_result:
         rl = intel_result.get("overall_risk_level", "low")
         rl_color = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}.get(rl, "⚪")
@@ -509,11 +509,11 @@ with mid_cols[0]:
         if err:
             st.error(err)
         else:
-            st.caption("Scraping live news + weather…")
+            st.caption("Checking live news + weather…")
 
 with mid_cols[1]:
-    st.subheader("🔮 Predicted Surges")
-    st.caption(f"refresh: every 90s · {age_str('predictions')}")
+    st.subheader("🔮 Crowding Predictions")
+    st.caption(f"updates every 90s · {age_str('predictions')}")
     if predictions:
         for p in (predictions.get("predictions") or [])[:6]:
             sev_color = {"low": "#5BD96B", "medium": "#F5A623", "high": "#E94B4B", "critical": "#9B1C1C"}.get(p.get("severity", "low"), "#5BD96B")
@@ -528,20 +528,20 @@ with mid_cols[1]:
         if err:
             st.error(err)
         else:
-            st.caption("Computing predictions…")
+            st.caption("Calculating predictions…")
 
 with mid_cols[2]:
-    st.subheader("👁️ Vision Agent (camera rotator)")
-    st.caption(f"refresh: every 30s · {age_str('vision')}")
+    st.subheader("👁️ Camera View (live CCTV)")
+    st.caption(f"updates every 30s · {age_str('vision')}")
     if vision_result:
         density = vision_result.get("density_pct", 0)
-        st.metric("Density", f"{density}%", vision_result.get("trend", "stable"))
+        st.metric("How crowded", f"{density}%", vision_result.get("trend", "stable"))
         st.write(vision_result.get("summary", ""))
         if vision_result.get("anomalies"):
             st.warning("⚠ " + ", ".join(vision_result["anomalies"]))
-        st.caption(f"clip: {vision_result.get('clip','?')} · src: {vision_result.get('source','?')}")
+        st.caption(f"camera: {vision_result.get('clip','?')}")
     else:
-        st.caption("No camera frame yet.")
+        st.caption("Waiting for camera feed…")
 
 
 # ---------------------------------------------------------------------------
@@ -551,23 +551,22 @@ with mid_cols[2]:
 bot_cols = st.columns([2, 2, 2])
 
 with bot_cols[0]:
-    st.subheader("📋 Live Incident Feed")
+    st.subheader("📋 Live Incidents")
     if supabase_client.is_enabled():
-        st.caption("💾 Persisted in Supabase · survives restarts and scales across instances")
+        st.caption("💾 Saved to database · survives restarts")
     incidents = commander.get_incidents(limit=15)
     if not incidents:
         st.caption("No incidents yet.")
     for inc in incidents:
         sev_emoji = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}.get(inc.get("severity", "low"), "⚪")
         with st.expander(f"{sev_emoji} {inc['type']} · {inc.get('zone','?')} · {inc.get('summary','')[:48]}"):
-            st.caption(f"{inc.get('timestamp','')} · source: {inc.get('source','?')}")
+            st.caption(f"{inc.get('timestamp','')} · reported by: {inc.get('source','?')}")
             st.text(inc.get("plan", ""))
             if inc.get("security") and inc["security"].get("is_quarantined"):
-                st.error(f"🛡 Quarantined: {inc['security']['threats_found']} VT threat(s)")
+                st.error(f"🛡 Blocked: {inc['security']['threats_found']} unsafe link(s) detected")
             if inc.get("fan_message"):
                 fm = inc["fan_message"]
                 st.code(f"From: {fm.get('from','')}\n{fm.get('body','')[:300]}", language="text")
-            # Similar past incidents (Supabase-backed institutional memory)
             similar = inc.get("similar_past") or []
             if not similar and supabase_client.is_enabled() and inc.get("summary"):
                 similar = supabase_client.find_similar_incidents(
@@ -579,13 +578,13 @@ with bot_cols[0]:
                     st.caption(f"  • {pct}% match · {s.get('type','?')} in {s.get('zone','?')}: {(s.get('summary') or '')[:90]}")
 
 with bot_cols[1]:
-    st.subheader("💬 Commander Chat")
+    st.subheader("💬 Ask Command")
     for turn in st.session_state.chat_history[-6:]:
         with st.chat_message(turn["role"]):
             st.markdown(turn["content"])
             if turn.get("tools"):
-                st.caption("Tools: " + ", ".join(turn["tools"]))
-    q = st.chat_input("Ask the Commander…")
+                st.caption("Used: " + ", ".join(turn["tools"]))
+    q = st.chat_input("Ask anything about the stadium…")
     if q:
         st.session_state.chat_history.append({"role": "user", "content": q})
         with st.spinner("Thinking…"):
@@ -594,22 +593,22 @@ with bot_cols[1]:
         st.rerun()
 
 with bot_cols[2]:
-    st.subheader("🌐 Browser Agent (real-world actions)")
+    st.subheader("🌐 Web Lookup")
     bs = st.session_state.browser_session
     if not bs:
-        st.caption("Idle. Launch a real cloud-browser task — agent's actions stream live below.")
+        st.caption("Look up live external info from the web — traffic, transit, weather. Watch it work below.")
         b_cols = st.columns(2)
         if b_cols[0].button("🚦 Live traffic", use_container_width=True):
-            with st.spinner("Spawning browser session…"):
+            with st.spinner("Opening browser…"):
                 st.session_state.browser_session = browser_agent.kickoff_traffic_session()
             st.rerun()
-        if b_cols[1].button("🚌 BMTC alerts", use_container_width=True):
-            with st.spinner("Spawning browser session…"):
+        if b_cols[1].button("🚌 Bus alerts", use_container_width=True):
+            with st.spinner("Opening browser…"):
                 try:
                     s = browser_agent.kickoff_traffic_session()
                     st.session_state.browser_session = s
                 except Exception as e:
-                    st.error(f"Browser-Use error: {e}")
+                    st.error(f"Browser error: {e}")
             st.rerun()
     else:
         st.caption(f"Session: {bs.get('session_id','-')[:8]}… · live below")
@@ -628,27 +627,27 @@ st.divider()
 final_cols = st.columns([2, 1])
 
 with final_cols[0]:
-    st.subheader("✉️ Fan Inbox (live)")
-    st.caption(f"refresh: every 20s · {age_str('fanmail')} · auto-SOP {'ON' if st.session_state.auto_process_mail else 'OFF'}")
+    st.subheader("✉️ Fan Messages")
+    st.caption(f"updates every 20s · {age_str('fanmail')} · auto-respond {'ON' if st.session_state.auto_process_mail else 'OFF'}")
     try:
         inbox_id = fan_concierge.get_inbox_id()
         from tools.agentmail_client import get_client
         recent = get_client().list_recent(inbox_id, limit=8)
         if not recent:
-            st.caption("Inbox empty. Reply from a demo inbox to populate.")
+            st.caption("No messages yet. Reply from a demo inbox to see them appear.")
         for m in recent:
             with st.expander(f"✉ {m.sender[:30]} · {(m.subject or '')[:30]}"):
                 st.text(m.body[:300])
     except Exception as e:
-        st.error(f"AgentMail: {e}")
+        st.error(f"Email service error: {e}")
 
 with final_cols[1]:
-    st.subheader("📜 Agent Audit Trail")
-    st.caption("Every agent decision, durably logged. Last 8 shown.")
+    st.subheader("📜 Decision History")
+    st.caption("Every action the system has taken, saved here. Last 8 shown.")
     if supabase_client.is_enabled():
         decisions = maybe_run("audit", ttl_seconds=15, fn=lambda: supabase_client.fetch_recent_decisions(limit=8), expensive=False) or []
         if not decisions:
-            st.caption("No decisions logged yet.")
+            st.caption("Nothing logged yet.")
         for d in decisions:
             with st.expander(f"🤖 {d.get('agent_name','?')} · {d.get('action','?')[:48]}"):
                 st.caption(f"{(d.get('created_at') or '').__str__()[:19]}")
@@ -657,17 +656,16 @@ with final_cols[1]:
                 if d.get("payload"):
                     st.json(d["payload"])
     else:
-        st.caption("Supabase not configured — audit trail disabled.")
+        st.caption("Database not connected — history disabled.")
 
 st.divider()
 voice_col, broad_col = st.columns([3, 2])
 
 with voice_col:
-    st.subheader("🎙️ Vapi Voice Commander")
+    st.subheader("🎙️ Voice Assistant")
     st.caption(
-        "Talk to the Commander Agent in real time. Voice in → GPT-4o-mini reasoning "
-        "with live dashboard state → ElevenLabs voice out. Assistant prompt "
-        "auto-updates every few minutes with current incidents and risk level."
+        "Talk to the system out loud. It hears you, knows what's happening in the stadium right now, "
+        "and answers back in a calm voice. Updates with the latest incidents every few minutes."
     )
     if vapi_client.public_key():
         # Ensure the Vapi assistant exists (one-shot create on first session)
@@ -694,13 +692,12 @@ with voice_col:
             height=380,
         )
 
-        with st.expander("📞 Outbound voice alert (critical incidents)", expanded=False):
+        with st.expander("📞 Call someone with an urgent alert", expanded=False):
             import os as _os
             phone_id_set = bool(_os.getenv("VAPI_PHONE_NUMBER_ID"))
             if not phone_id_set:
                 st.warning(
-                    "Set `VAPI_PHONE_NUMBER_ID` in `.env` to enable real outbound calls. "
-                    "Purchase or import a number at https://docs.vapi.ai/phone-numbers."
+                    "Outbound calls aren't set up yet. Add a phone number ID to enable real calls."
                 )
 
             critical_incidents = [
@@ -717,20 +714,20 @@ with voice_col:
                 )
 
             to_number = st.text_input(
-                "Phone (E.164, e.g. +14155550123)",
+                "Phone number (with country code, e.g. +14155550123)",
                 value=st.session_state.get("vapi_last_to_number", ""),
                 key="vapi_outbound_to",
             )
             summary = st.text_area(
-                "Incident summary spoken on call",
+                "What the call should say",
                 value=default_summary,
                 height=80,
                 key="vapi_outbound_summary",
             )
             op_name = st.session_state.get("operator_name", "operator")
 
-            if st.button("📞 Place voice alert", disabled=not (to_number and summary), use_container_width=True):
-                with st.spinner("Dialing via Vapi…"):
+            if st.button("📞 Call now", disabled=not (to_number and summary), use_container_width=True):
+                with st.spinner("Dialing…"):
                     result = vapi_client.place_outbound_alert(
                         to_number=to_number.strip(),
                         incident_summary=summary.strip(),
@@ -738,15 +735,15 @@ with voice_col:
                     )
                 if result.get("ok"):
                     st.session_state.vapi_last_to_number = to_number.strip()
-                    st.success(f"Call placed. call_id: {result.get('call_id','?')}")
+                    st.success(f"Call placed. Reference: {result.get('call_id','?')}")
                 else:
                     st.error(f"Call failed: {result.get('error','unknown error')}")
     else:
-        st.error("VAPI_PUBLIC_KEY not configured.")
+        st.error("Voice assistant not set up.")
 
 with broad_col:
-    st.subheader("📢 PA Broadcaster (browser TTS)")
-    st.session_state.tts_enabled = st.toggle("Auto-broadcast new critical alerts", value=st.session_state.tts_enabled)
+    st.subheader("📢 Stadium Announcement")
+    st.session_state.tts_enabled = st.toggle("Auto-announce urgent alerts", value=st.session_state.tts_enabled)
     incidents_to_announce = [i for i in incidents_recent if i.get("severity") in ("high", "critical")]
     if incidents_to_announce:
         latest = incidents_to_announce[0]
@@ -786,28 +783,28 @@ with broad_col:
                 </script>""",
                 height=0,
             )
-            st.success("📢 Auto-broadcast fired for new critical alert")
+            st.success("📢 Auto-announcement played for new urgent alert")
     else:
-        st.caption("No high/critical incidents queued for broadcast.")
+        st.caption("Nothing urgent to announce right now.")
 
 
 st.divider()
 priv_col, fan_col = st.columns([1, 1])
 
 with priv_col:
-    st.subheader("🛡 Privacy — Post-Event Report")
+    st.subheader("🛡 Privacy-Safe Report")
     st.caption(
-        "De-identified roll-up of every incident so far. Direct IDs stripped, "
-        "zones generalised to families, timestamps shifted by a uniform offset. "
-        "Suitable for sharing with analysts without exposing attendees."
+        "Build an anonymised summary of every incident so far. Personal info (emails, phones, names) "
+        "is removed, exact locations are blurred to general areas, and times are shifted — safe to "
+        "share with analysts without exposing any individual attendee."
     )
     col_g, col_d = st.columns([1, 1])
     granularity = col_g.selectbox(
-        "Time bucket", ["hour", "day"], index=0, key="priv_granularity"
+        "Group times by", ["hour", "day"], index=0, key="priv_granularity"
     )
-    use_shift = col_d.toggle("Apply random date shift", value=True, key="priv_shift_toggle")
+    use_shift = col_d.toggle("Shift dates randomly", value=True, key="priv_shift_toggle", help="Hides the exact day the event happened.")
 
-    if st.button("Generate de-identified report", use_container_width=True, key="priv_btn"):
+    if st.button("Build anonymised report", use_container_width=True, key="priv_btn"):
         raw = commander.get_incidents(limit=200)
         st.session_state.priv_report = privacy.build_post_event_report(
             raw,
@@ -815,22 +812,22 @@ with priv_col:
             granularity=granularity,
         )
         privacy.write_report_to_disk(st.session_state.priv_report)
-        st.success(f"Report built · {st.session_state.priv_report['incident_count']} incidents")
+        st.success(f"Report built · {st.session_state.priv_report['incident_count']} incidents included")
 
     report = st.session_state.get("priv_report")
     if report:
         m1, m2, m3 = st.columns(3)
         m1.metric("Incidents", report["incident_count"])
-        m2.metric("Zone families", len(report["by_zone_family"]))
-        m3.metric("Date shift", f"{report['applied_date_shift_days']}d")
-        with st.expander("By type / severity / zone-family / hour"):
+        m2.metric("Areas covered", len(report["by_zone_family"]))
+        m3.metric("Dates shifted by", f"{report['applied_date_shift_days']}d")
+        with st.expander("Breakdown (by type, severity, area, time)"):
             st.json({
                 "by_type": report["by_type"],
                 "by_severity": report["by_severity"],
-                "by_zone_family": report["by_zone_family"],
+                "by_area": report["by_zone_family"],
                 "by_hour": report["by_hour"],
             })
-        with st.expander("Privacy notes (what was stripped)"):
+        with st.expander("What was removed to protect privacy"):
             for note in report["privacy_notes"]:
                 st.markdown(f"- {note}")
         st.download_button(
@@ -841,31 +838,31 @@ with priv_col:
             use_container_width=True,
         )
     else:
-        st.caption("Click *Generate* to build a shareable report.")
+        st.caption("Click *Build* to make a shareable report.")
 
 with fan_col:
-    st.subheader("🎮 Fan Reports — Distributed Sensing")
+    st.subheader("🎮 Crowd-Sourced Reports")
     st.caption(
-        "Simulates the fan mobile app. Submissions earn points; high/critical "
-        "categories auto-route to Commander incidents."
+        "Like a fan app inside the dashboard. Anyone in the stadium can report what they see — "
+        "the system gives them points, and urgent reports go straight to the response team."
     )
     with st.form("fan_report_form", clear_on_submit=True):
         c1, c2 = st.columns([1, 1])
-        reporter_id = c1.text_input("Your handle", value=st.session_state.get("fan_handle", "fan_ravi"))
+        reporter_id = c1.text_input("Your name", value=st.session_state.get("fan_handle", "fan_ravi"))
         category = c2.selectbox(
-            "Category",
+            "What kind of issue?",
             list(fan_reports.CATEGORY_POINTS.keys()),
             index=0,
         )
         c3, c4 = st.columns([1, 1])
-        zone = c3.text_input("Zone (e.g. A_STAND, G14, P_CORPORATE)", value="A_STAND")
-        verified = c4.toggle("Volunteer-verified", value=False, help="2× points if a volunteer has confirmed on-site.")
+        zone = c3.text_input("Where (section or gate)", value="A_STAND")
+        verified = c4.toggle("Volunteer confirmed", value=False, help="2× points if a stadium volunteer has confirmed this on-site.")
         summary_text = st.text_area("What did you see?", height=70, placeholder="Bottleneck forming near restrooms behind row 18…")
 
         submitted = st.form_submit_button("📤 Submit report", use_container_width=True)
         if submitted:
             if not summary_text.strip():
-                st.warning("Add a one-liner about what you saw before submitting.")
+                st.warning("Add a quick description before submitting.")
             else:
                 st.session_state.fan_handle = reporter_id
                 rec = fan_reports.submit_report(
@@ -877,19 +874,19 @@ with fan_col:
                 )
                 badge = "🚨" if rec.get("routed_to_commander") else "✅"
                 st.success(
-                    f"{badge} +{rec['points_awarded']} points · severity *{rec['severity']}*"
-                    + (" · routed to Commander" if rec.get("routed_to_commander") else "")
+                    f"{badge} +{rec['points_awarded']} points · {rec['severity']} priority"
+                    + (" · sent to response team" if rec.get("routed_to_commander") else "")
                 )
 
     fr_stats = fan_reports.stats()
     s1, s2, s3 = st.columns(3)
-    s1.metric("Total reports", fr_stats["total_reports"])
-    s2.metric("Unique reporters", fr_stats["unique_reporters"])
-    s3.metric("Routed to Commander", fr_stats["routed_count"])
+    s1.metric("Reports filed", fr_stats["total_reports"])
+    s2.metric("People reporting", fr_stats["unique_reporters"])
+    s3.metric("Sent to response team", fr_stats["routed_count"])
 
     leaders = fan_reports.get_leaderboard(top_n=5)
     if leaders:
-        st.markdown("**🏆 Top contributors**")
+        st.markdown("**🏆 Top reporters**")
         for rank, p in enumerate(leaders, 1):
             st.markdown(
                 f"<div style='padding:4px 8px; background:#1B2838; border-left:3px solid #5BD96B; "
@@ -912,4 +909,4 @@ with fan_col:
                 )
 
 # Auto-rerun message at bottom for context
-st.caption(f"💡 Dashboard auto-refreshes every {TICK_MS//1000}s. Different subsystems have different TTLs to respect API quotas — see sidebar for last-run timestamps.")
+st.caption(f"💡 This dashboard updates itself every {TICK_MS//1000} seconds. Each section refreshes on its own schedule — see the sidebar for the latest update times.")
