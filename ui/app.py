@@ -39,6 +39,7 @@ from agents import (
 from tools import supabase_client, vapi_client
 from ui.login import render_login, render_logout_button
 from ui.stadium_3d import build_3d_figure, state_with_perturbation_applied
+from ui.stadium_map import build_map_figure
 import streamlit.components.v1 as components
 
 DATA_DIR = ROOT / "data"
@@ -423,19 +424,38 @@ with st.sidebar:
 twin_cols = st.columns([3, 2])
 with twin_cols[0]:
     st.subheader("Live Digital Twin")
-    st.caption(f"Stands extruded by current density · last MC tick: {age_str('whatif')} · drag to rotate")
     if whatif_cmp:
         scen_overrides = {zid: pcts["p50"] for zid, pcts in whatif_cmp["scenario"]["density_percentiles"].items()}
         scen_state = state_with_perturbation_applied(st.session_state.whatif_perturbation)
-        fig = build_3d_figure(
+        view_title = f"Scenario: {st.session_state.whatif_perturbation.get('type','-').replace('_',' ')}"
+    else:
+        scen_state = whatif_simulator.current_baseline_state()
+        scen_overrides = None
+        view_title = "Baseline"
+
+    tab_map, tab_3d = st.tabs(["🗺 Map (heat)", "📦 3D Twin"])
+    with tab_map:
+        st.caption(
+            f"OpenStreetMap of M. Chinnaswamy · density overlay last refreshed {age_str('whatif')}"
+        )
+        map_fig = build_map_figure(
             scen_state,
-            title=f"Scenario: {st.session_state.whatif_perturbation.get('type','-').replace('_',' ')}",
+            title=view_title,
             density_overrides=scen_overrides,
             height=520,
         )
-    else:
-        fig = build_3d_figure(whatif_simulator.current_baseline_state(), title="Baseline", height=520)
-    st.plotly_chart(fig, use_container_width=True, key=f"twin_{tick}")
+        st.plotly_chart(map_fig, use_container_width=True, key=f"map_{tick}")
+    with tab_3d:
+        st.caption(
+            f"Stands extruded by current density · last MC tick: {age_str('whatif')} · drag to rotate"
+        )
+        fig = build_3d_figure(
+            scen_state,
+            title=view_title,
+            density_overrides=scen_overrides,
+            height=520,
+        )
+        st.plotly_chart(fig, use_container_width=True, key=f"twin_{tick}")
 
 with twin_cols[1]:
     st.subheader("Top crush risk zones")
