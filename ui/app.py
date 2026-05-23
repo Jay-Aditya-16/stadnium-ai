@@ -36,7 +36,8 @@ from agents import (
     vision,
     whatif_simulator,
 )
-from tools import supabase_client, vapi_client
+from tools import privacy, supabase_client, vapi_client
+from agents import fan_reports
 from ui.login import render_login, render_logout_button
 from ui.stadium_3d import build_3d_figure, state_with_perturbation_applied
 from ui.stadium_map import build_map_figure
@@ -789,6 +790,126 @@ with broad_col:
     else:
         st.caption("No high/critical incidents queued for broadcast.")
 
+
+st.divider()
+priv_col, fan_col = st.columns([1, 1])
+
+with priv_col:
+    st.subheader("🛡 Privacy — Post-Event Report")
+    st.caption(
+        "De-identified roll-up of every incident so far. Direct IDs stripped, "
+        "zones generalised to families, timestamps shifted by a uniform offset. "
+        "Suitable for sharing with analysts without exposing attendees."
+    )
+    col_g, col_d = st.columns([1, 1])
+    granularity = col_g.selectbox(
+        "Time bucket", ["hour", "day"], index=0, key="priv_granularity"
+    )
+    use_shift = col_d.toggle("Apply random date shift", value=True, key="priv_shift_toggle")
+
+    if st.button("Generate de-identified report", use_container_width=True, key="priv_btn"):
+        raw = commander.get_incidents(limit=200)
+        st.session_state.priv_report = privacy.build_post_event_report(
+            raw,
+            shift_days=None if use_shift else 0,
+            granularity=granularity,
+        )
+        privacy.write_report_to_disk(st.session_state.priv_report)
+        st.success(f"Report built · {st.session_state.priv_report['incident_count']} incidents")
+
+    report = st.session_state.get("priv_report")
+    if report:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Incidents", report["incident_count"])
+        m2.metric("Zone families", len(report["by_zone_family"]))
+        m3.metric("Date shift", f"{report['applied_date_shift_days']}d")
+        with st.expander("By type / severity / zone-family / hour"):
+            st.json({
+                "by_type": report["by_type"],
+                "by_severity": report["by_severity"],
+                "by_zone_family": report["by_zone_family"],
+                "by_hour": report["by_hour"],
+            })
+        with st.expander("Privacy notes (what was stripped)"):
+            for note in report["privacy_notes"]:
+                st.markdown(f"- {note}")
+        st.download_button(
+            "⬇ Download report (JSON)",
+            data=json.dumps(report, indent=2, default=str),
+            file_name="post_event_report.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+    else:
+        st.caption("Click *Generate* to build a shareable report.")
+
+with fan_col:
+    st.subheader("🎮 Fan Reports — Distributed Sensing")
+    st.caption(
+        "Simulates the fan mobile app. Submissions earn points; high/critical "
+        "categories auto-route to Commander incidents."
+    )
+    with st.form("fan_report_form", clear_on_submit=True):
+        c1, c2 = st.columns([1, 1])
+        reporter_id = c1.text_input("Your handle", value=st.session_state.get("fan_handle", "fan_ravi"))
+        category = c2.selectbox(
+            "Category",
+            list(fan_reports.CATEGORY_POINTS.keys()),
+            index=0,
+        )
+        c3, c4 = st.columns([1, 1])
+        zone = c3.text_input("Zone (e.g. A_STAND, G14, P_CORPORATE)", value="A_STAND")
+        verified = c4.toggle("Volunteer-verified", value=False, help="2× points if a volunteer has confirmed on-site.")
+        summary_text = st.text_area("What did you see?", height=70, placeholder="Bottleneck forming near restrooms behind row 18…")
+
+        submitted = st.form_submit_button("📤 Submit report", use_container_width=True)
+        if submitted:
+            if not summary_text.strip():
+                st.warning("Add a one-liner about what you saw before submitting.")
+            else:
+                st.session_state.fan_handle = reporter_id
+                rec = fan_reports.submit_report(
+                    reporter_id=reporter_id,
+                    category=category,
+                    zone=zone,
+                    summary=summary_text,
+                    verified=verified,
+                )
+                badge = "🚨" if rec.get("routed_to_commander") else "✅"
+                st.success(
+                    f"{badge} +{rec['points_awarded']} points · severity *{rec['severity']}*"
+                    + (" · routed to Commander" if rec.get("routed_to_commander") else "")
+                )
+
+    fr_stats = fan_reports.stats()
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Total reports", fr_stats["total_reports"])
+    s2.metric("Unique reporters", fr_stats["unique_reporters"])
+    s3.metric("Routed to Commander", fr_stats["routed_count"])
+
+    leaders = fan_reports.get_leaderboard(top_n=5)
+    if leaders:
+        st.markdown("**🏆 Top contributors**")
+        for rank, p in enumerate(leaders, 1):
+            st.markdown(
+                f"<div style='padding:4px 8px; background:#1B2838; border-left:3px solid #5BD96B; "
+                f"border-radius:4px; color:white; font-size:13px; margin-bottom:3px;'>"
+                f"#{rank} <b>{p['reporter_id']}</b> · {p['points']} pts · "
+                f"{p['reports']} reports · <i>{p['badge']}</i></div>",
+                unsafe_allow_html=True,
+            )
+
+    recent = fan_reports.get_recent_reports(limit=5)
+    if recent:
+        with st.expander(f"Latest {len(recent)} reports"):
+            for r in recent:
+                tag = "🚨" if r.get("routed_to_commander") else ("✅" if r.get("verified") else "•")
+                st.markdown(
+                    f"{tag} `{r['report_id']}` · **{r['category']}** in {r['zone']} · "
+                    f"+{r['points_awarded']}pts · {r['submitted_at']}<br>"
+                    f"<span style='color:#9BB0C4; font-size:12px;'>{r['summary']}</span>",
+                    unsafe_allow_html=True,
+                )
 
 # Auto-rerun message at bottom for context
 st.caption(f"💡 Dashboard auto-refreshes every {TICK_MS//1000}s. Different subsystems have different TTLs to respect API quotas — see sidebar for last-run timestamps.")
